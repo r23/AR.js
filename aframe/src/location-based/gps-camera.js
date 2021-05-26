@@ -112,25 +112,31 @@ AFRAME.registerComponent('gps-camera', {
 
         window.addEventListener(eventName, this._onDeviceOrientation, false);
 
-        this._watchPositionId = this._initWatchGPS(function (position) {
-            var localPosition = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                altitude: position.coords.altitude,
-                accuracy: position.coords.accuracy,
-                altitudeAccuracy: position.coords.altitudeAccuracy,
-            };
-          
+    },
+
+    play: function() {
+        if (this.data.simulateLatitude !== 0 && this.data.simulateLongitude !== 0) {
+            localPosition.latitude = this.data.simulateLatitude;
+            localPosition.longitude = this.data.simulateLongitude;
             if (this.data.simulateAltitude !== 0) {
                 localPosition.altitude = this.data.simulateAltitude;
             }
+            this.currentCoords = localPosition;
+            this._updatePosition();
+        } else {
+            this._watchPositionId = this._initWatchGPS(function (position) {
+                var localPosition = {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    altitude: position.coords.altitude,
+                    accuracy: position.coords.accuracy,
+                    altitudeAccuracy: position.coords.altitudeAccuracy,
+                };
+          
+                if (this.data.simulateAltitude !== 0) {
+                    localPosition.altitude = this.data.simulateAltitude;
+                }
                
-            if (this.data.simulateLatitude !== 0 && this.data.simulateLongitude !== 0) {
-                localPosition.latitude = this.data.simulateLatitude;
-                localPosition.longitude = this.data.simulateLongitude;
-                this.currentCoords = localPosition;
-                this._updatePosition();
-            } else {
                 this.currentCoords = localPosition;
                 var distMoved = this._haversineDist(
                     this.lastPosition,
@@ -144,8 +150,8 @@ AFRAME.registerComponent('gps-camera', {
                         latitude: this.currentCoords.latitude
                     };
                 }
-            }
-        }.bind(this));
+            }.bind(this));
+        }
     },
 
     tick: function () {
@@ -155,11 +161,14 @@ AFRAME.registerComponent('gps-camera', {
         this._updateRotation();
     },
 
-    remove: function () {
+    pause: function() {
         if (this._watchPositionId) {
             navigator.geolocation.clearWatch(this._watchPositionId);
         }
         this._watchPositionId = null;
+    },
+
+    remove: function () {
 
         var eventName = this._getDeviceOrientationEventName();
         window.removeEventListener(eventName, this._onDeviceOrientation, false);
@@ -310,7 +319,7 @@ AFRAME.registerComponent('gps-camera', {
         if (isPlace && this.data.maxDistance && this.data.maxDistance > 0 && distance > this.data.maxDistance) {
             return Number.MAX_SAFE_INTEGER;
         }
-
+	
         return distance;
     },
 

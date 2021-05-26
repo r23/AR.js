@@ -2495,7 +2495,7 @@ Object.assign(ARjs.Context.prototype, THREE.EventDispatcher.prototype);
 
 // default to github page
 ARjs.Context.baseURL = 'https://ar-js-org.github.io/AR.js/three.js/'
-ARjs.Context.REVISION = '3.3.1';
+ARjs.Context.REVISION = '3.3.3';
 
 /**
  * Create a default camera for this trackingBackend
@@ -2549,8 +2549,13 @@ ARjs.Context.prototype.update = function (srcElement) {
     }
     this._updatedAt = present
 
-    // mark all markers to invisible before processing this frame
+    var prevVisibleMarkers = []
+
+    // mark all markers to invisible before processing this frame & store prev state
     this._arMarkersControls.forEach(function (markerControls) {
+        if (markerControls.object3d.visible) {
+            prevVisibleMarkers.push(markerControls)
+        }
         markerControls.object3d.visible = false
     })
 
@@ -2565,6 +2570,22 @@ ARjs.Context.prototype.update = function (srcElement) {
     this.dispatchEvent({
         type: 'sourceProcessed'
     });
+
+    // After frame is processed, check visibility of each marker to determine if it was found or lost
+    this._arMarkersControls.forEach(function (markerControls) {
+        var wasVisible = prevVisibleMarkers.includes(markerControls);
+        var isVisible = markerControls.object3d.visible;
+
+        if (isVisible === true && wasVisible === false) {
+            window.dispatchEvent(new CustomEvent('markerFound', {
+                detail: markerControls,
+            }))
+        } else if (isVisible === false && wasVisible === true) {
+            window.dispatchEvent(new CustomEvent('markerLost', {
+                detail: markerControls,
+            }))
+        }
+})
 
 
     // return true as we processed the frame
@@ -5970,6 +5991,7 @@ AFRAME.registerComponent('arjs-webcam-texture', {
         this.scene.renderer.autoClear = false;
         this.video = document.createElement("video");
         this.video.setAttribute("autoplay", true);
+        this.video.setAttribute("playsinline", true);
         this.video.setAttribute("display", "none");
         document.body.appendChild(this.video);
         this.geom = new THREE.PlaneBufferGeometry(); //0.5, 0.5);
@@ -6126,25 +6148,31 @@ AFRAME.registerComponent('gps-camera', {
 
         window.addEventListener(eventName, this._onDeviceOrientation, false);
 
-        this._watchPositionId = this._initWatchGPS(function (position) {
-            var localPosition = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                altitude: position.coords.altitude,
-                accuracy: position.coords.accuracy,
-                altitudeAccuracy: position.coords.altitudeAccuracy,
-            };
-          
+    },
+
+    play: function() {
+        if (this.data.simulateLatitude !== 0 && this.data.simulateLongitude !== 0) {
+            localPosition.latitude = this.data.simulateLatitude;
+            localPosition.longitude = this.data.simulateLongitude;
             if (this.data.simulateAltitude !== 0) {
                 localPosition.altitude = this.data.simulateAltitude;
             }
+            this.currentCoords = localPosition;
+            this._updatePosition();
+        } else {
+            this._watchPositionId = this._initWatchGPS(function (position) {
+                var localPosition = {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    altitude: position.coords.altitude,
+                    accuracy: position.coords.accuracy,
+                    altitudeAccuracy: position.coords.altitudeAccuracy,
+                };
+          
+                if (this.data.simulateAltitude !== 0) {
+                    localPosition.altitude = this.data.simulateAltitude;
+                }
                
-            if (this.data.simulateLatitude !== 0 && this.data.simulateLongitude !== 0) {
-                localPosition.latitude = this.data.simulateLatitude;
-                localPosition.longitude = this.data.simulateLongitude;
-                this.currentCoords = localPosition;
-                this._updatePosition();
-            } else {
                 this.currentCoords = localPosition;
                 var distMoved = this._haversineDist(
                     this.lastPosition,
@@ -6158,8 +6186,8 @@ AFRAME.registerComponent('gps-camera', {
                         latitude: this.currentCoords.latitude
                     };
                 }
-            }
-        }.bind(this));
+            }.bind(this));
+        }
     },
 
     tick: function () {
@@ -6169,11 +6197,14 @@ AFRAME.registerComponent('gps-camera', {
         this._updateRotation();
     },
 
-    remove: function () {
+    pause: function() {
         if (this._watchPositionId) {
             navigator.geolocation.clearWatch(this._watchPositionId);
         }
         this._watchPositionId = null;
+    },
+
+    remove: function () {
 
         var eventName = this._getDeviceOrientationEventName();
         window.removeEventListener(eventName, this._onDeviceOrientation, false);
@@ -6324,7 +6355,7 @@ AFRAME.registerComponent('gps-camera', {
         if (isPlace && this.data.maxDistance && this.data.maxDistance > 0 && distance > this.data.maxDistance) {
             return Number.MAX_SAFE_INTEGER;
         }
-
+	
         return distance;
     },
 
@@ -6472,7 +6503,7 @@ AFRAME.registerComponent('gps-entity-place', {
 
             this.el.setAttribute('distance', distanceForMsg);
             this.el.setAttribute('distanceMsg', formatDistance(distanceForMsg));
-            this.el.dispatchEvent(new CustomEvent('gps-entity-place-update-positon', { detail: { distance: distanceForMsg } }));
+            this.el.dispatchEvent(new CustomEvent('gps-entity-place-update-position', { detail: { distance: distanceForMsg } }));
 
             var actualDistance = this._cameraGps.computeDistanceMeters(ev.detail.position, dstCoords, true);
 
@@ -6685,26 +6716,31 @@ AFRAME.registerComponent('gps-projected-camera', {
         }
 
         window.addEventListener(eventName, this._onDeviceOrientation, false);
-      
-        this._watchPositionId = this._initWatchGPS(function (position) {
-           var localPosition = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                altitude: position.coords.altitude,
-                accuracy: position.coords.accuracy,
-                altitudeAccuracy: position.coords.altitudeAccuracy,
-            };
-          
+    },
+
+    play: function() {
+        if (this.data.simulateLatitude !== 0 && this.data.simulateLongitude !== 0) {
+            localPosition.latitude = this.data.simulateLatitude;
+            localPosition.longitude = this.data.simulateLongitude;
             if (this.data.simulateAltitude !== 0) {
                 localPosition.altitude = this.data.simulateAltitude;
             }
+            this.currentCoords = localPosition;
+            this._updatePosition();
+        } else {
+            this._watchPositionId = this._initWatchGPS(function (position) {
+                var localPosition = {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    altitude: position.coords.altitude,
+                    accuracy: position.coords.accuracy,
+                    altitudeAccuracy: position.coords.altitudeAccuracy,
+                };
+          
+                if (this.data.simulateAltitude !== 0) {
+                    localPosition.altitude = this.data.simulateAltitude;
+                }
                
-            if (this.data.simulateLatitude !== 0 && this.data.simulateLongitude !== 0) {
-                localPosition.latitude = this.data.simulateLatitude;
-                localPosition.longitude = this.data.simulateLongitude;
-                this.currentCoords = localPosition;
-                this._updatePosition();
-            } else {
                 this.currentCoords = localPosition;
                 var distMoved = this._haversineDist(
                     this.lastPosition,
@@ -6718,8 +6754,8 @@ AFRAME.registerComponent('gps-projected-camera', {
                         latitude: this.currentCoords.latitude
                     };
                 }
-            }
-        }.bind(this));
+            }.bind(this));
+        }
     },
 
     tick: function() {
@@ -6729,12 +6765,14 @@ AFRAME.registerComponent('gps-projected-camera', {
         this._updateRotation();
     },
 
-    remove: function() {
+    pause: function() {
         if (this._watchPositionId) {
             navigator.geolocation.clearWatch(this._watchPositionId);
         }
         this._watchPositionId = null;
+    },
 
+    remove: function() {
         var eventName = this._getDeviceOrientationEventName();
         window.removeEventListener(eventName, this._onDeviceOrientation, false);
         window.removeEventListener('gps-entity-place-added', this.onGpsEntityPlaceAdded);
@@ -7104,7 +7142,7 @@ AFRAME.registerComponent('gps-projected-entity-place', {
             this.el.setAttribute('distance', distanceForMsg);
             this.el.setAttribute('distanceMsg', formatDistance(distanceForMsg));
 
-            this.el.dispatchEvent(new CustomEvent('gps-entity-place-update-positon', { detail: { distance: distanceForMsg } }));
+            this.el.dispatchEvent(new CustomEvent('gps-entity-place-update-position', { detail: { distance: distanceForMsg } }));
 
             var actualDistance = this._cameraGps.computeDistanceMeters(dstCoords, true);
 
