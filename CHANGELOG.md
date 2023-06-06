@@ -1,4 +1,37 @@
+# 3.4.5
+- Fix for MathUtils issue see #523 #532
 
+# 3.4.4
+
+- Make the distance property of `gps-new-entity-place` available as soon as it's added #507
+- Add option to use the initial GPS location as the world origin, restoring the behaviour of the "classic" components and lessening the possibilty of precision errors due to large values for world coordinates #508
+- Update `artoolkit5-js` to 0.3.0
+
+# 3.4.3
+
+- Add the "reduce shaking" feature (using sensor smoothing) to the `new-location-based` A-Frame components #483
+- Include missing `THREEx` import in `gps-new-camera`, to allow use of ES6 modules #484
+- Add `latLonToWorld()` method to `gps-new-camera`, for compatibility with `gps-projected-camera` #485
+- Enable the `gpsTimeInterval` property in `gps-new-camera` (this sets the geolocation `maximumAge` property)
+- Add a `distance` property to `gps-new-entity-place`, representing the distance in metres from the GPS position to the entity. This is dynamically updated as the GPS position changes.
+- Enhanced `new-location-based` examples.
+
+# 3.4.2
+
+- Display webcam errors via DOM element rather than alert box in three.js location based #429
+- Bugfix for undefined `this.orientationChangeEventName` in new A-Frame location based #464
+- Bugfix for undefined `this.el` and `eventName` in AR.js fork of three.js DeviceOrientationControls #471
+- Tweaks to location-based three.js example
+# 3.4.1
+
+- Support for other Barcode Markers #469:
+  - AR_MATRIX_CODE_5x5_BCH_22_12_5
+  - AR_MATRIX_CODE_5x5_BCH_22_7_7
+  - AR_MATRIX_CODE_5x5
+  - AR_MATRIX_CODE_6x6
+- New `arjs-nft-init-data` event to get importan NFT marker data (width, height and dpi) #469;
+- Fix for oriantation on iOS #432
+- Typo fix in an example #431
 # 3.4.0
 
 - New gh build script to compile libs see #415

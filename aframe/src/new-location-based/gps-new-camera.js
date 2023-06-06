@@ -1,4 +1,5 @@
 import * as AFRAME from "aframe";
+import * as THREEx from "../../../three.js/build/ar-threex-location-only.js";
 
 AFRAME.registerComponent("gps-new-camera", {
   schema: {
@@ -20,7 +21,15 @@ AFRAME.registerComponent("gps-new-camera", {
     },
     positionMinAccuracy: {
       type: "number",
-      default: 1000,
+      default: 100,
+    },
+    gpsTimeInterval: {
+      type: "number",
+      default: 0,
+    },
+    initialPositionAsOrigin: {
+      type: "boolean",
+      default: false,
     },
   },
 
@@ -29,10 +38,17 @@ AFRAME.registerComponent("gps-new-camera", {
 
     this.threeLoc = new THREEx.LocationBased(
       this.el.sceneEl.object3D,
-      this.el.object3D
+      this.el.object3D,
+      {
+        initialPositionAsOrigin: this.data.initialPositionAsOrigin,
+      }
     );
 
     this.threeLoc.on("gpsupdate", (gpspos) => {
+      this._currentPosition = {
+        longitude: gpspos.coords.longitude,
+        latitude: gpspos.coords.latitude,
+      };
       this._sendGpsUpdateEvent(gpspos.coords.longitude, gpspos.coords.latitude);
     });
 
@@ -64,18 +80,27 @@ AFRAME.registerComponent("gps-new-camera", {
     if (!!navigator.userAgent.match(/Version\/[\d.]+.*Safari/)) {
       this._setupSafariOrientationPermissions();
     }
+
+    this.el.sceneEl.addEventListener("gps-entity-place-added", (e) => {
+      const entityPlace = e.detail.component.components["gps-new-entity-place"];
+      if (this._currentPosition) {
+        entityPlace.setDistanceFrom(this._currentPosition);
+      }
+    });
   },
 
   update: function (oldData) {
     this.threeLoc.setGpsOptions({
       gpsMinAccuracy: this.data.positionMinAccuracy,
       gpsMinDistance: this.data.gpsMinDistance,
+      maximumAge: this.data.gpsTimeInterval,
     });
     if (
       (this.data.simulateLatitude !== 0 || this.data.simulateLongitude !== 0) &&
       (this.data.simulateLatitude != oldData.simulateLatitude ||
         this.data.simulateLongitude != oldData.simulateLongitude)
     ) {
+      this.threeLoc.stopGps();
       this.threeLoc.fakeGps(
         this.data.simulateLongitude,
         this.data.simulateLatitude
@@ -96,6 +121,14 @@ AFRAME.registerComponent("gps-new-camera", {
 
   pause: function () {
     this.threeLoc.stopGps();
+  },
+
+  latLonToWorld: function (lat, lon) {
+    return this.threeLoc.lonLatToWorldCoords(lon, lat);
+  },
+
+  getInitialPosition: function () {
+    return this.threeLoc.initialPosition;
   },
 
   _sendGpsUpdateEvent: function (lon, lat) {
@@ -121,16 +154,18 @@ AFRAME.registerComponent("gps-new-camera", {
   _displayError: function (error) {
     const arjs = this.el.sceneEl.systems["arjs"];
     if (arjs) {
-      arjs._displayErrorPopup(msg);
+      arjs._displayErrorPopup(error);
     } else {
-      alert(msg);
+      alert(error);
     }
   },
 
   // from original gps-camera component
   _setupSafariOrientationPermissions: function () {
     // iOS 13+
-    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+    if (
+      typeof window.DeviceOrientationEvent?.requestPermission === "function"
+    ) {
       var handler = function () {
         console.log("Requesting device orientation permissions...");
         DeviceOrientationEvent.requestPermission();
@@ -149,14 +184,18 @@ AFRAME.registerComponent("gps-new-camera", {
         "After camera permission prompt, please tap the screen to activate geolocation."
       );
     } else {
-      var timeout = setTimeout(function () {
+      var timeout = setTimeout(() => {
         this.el.sceneEl.systems["arjs"]._displayErrorPopup(
           "Please enable device orientation in Settings > Safari > Motion & Orientation Access."
         );
       }, 750);
-      window.addEventListener(eventName, function () {
-        clearTimeout(timeout);
-      });
+      window.addEventListener(
+        "deviceorientation",
+        function () {
+          clearTimeout(timeout);
+        },
+        { once: true }
+      );
     }
   },
 

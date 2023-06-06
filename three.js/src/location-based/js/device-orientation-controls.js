@@ -1,13 +1,7 @@
 // Modified version of THREE.DeviceOrientationControls from three.js
 // will use the deviceorientationabsolute event if available
 
-import {
-  Euler,
-  EventDispatcher,
-  Math as MathUtils,
-  Quaternion,
-  Vector3,
-} from "three";
+import { Euler, EventDispatcher, MathUtils, Quaternion, Vector3 } from "three";
 
 const _zee = new Vector3(0, 0, 1);
 const _euler = new Euler();
@@ -41,10 +35,14 @@ class DeviceOrientationControls extends EventDispatcher {
 
     this.alphaOffset = 0; // radians
 
+    this.TWO_PI = 2 * Math.PI;
+    this.HALF_PI = 0.5 * Math.PI;
     this.orientationChangeEventName =
       "ondeviceorientationabsolute" in window
         ? "deviceorientationabsolute"
         : "deviceorientation";
+
+    this.smoothingFactor = 1;
 
     const onDeviceOrientationChangeEvent = function (event) {
       scope.deviceOrientation = event;
@@ -82,14 +80,14 @@ class DeviceOrientationControls extends EventDispatcher {
         typeof window.DeviceOrientationEvent.requestPermission === "function"
       ) {
         window.DeviceOrientationEvent.requestPermission()
-          .then(function (response) {
-            if (response == "granted") {
+          .then((response) => {
+            if (response === "granted") {
               window.addEventListener(
                 "orientationchange",
                 onScreenOrientationChangeEvent
               );
               window.addEventListener(
-                this.orientationChangeEventName,
+                scope.orientationChangeEventName,
                 onDeviceOrientationChangeEvent
               );
             }
@@ -106,7 +104,7 @@ class DeviceOrientationControls extends EventDispatcher {
           onScreenOrientationChangeEvent
         );
         window.addEventListener(
-          this.orientationChangeEventName,
+          scope.orientationChangeEventName,
           onDeviceOrientationChangeEvent
         );
       }
@@ -120,7 +118,7 @@ class DeviceOrientationControls extends EventDispatcher {
         onScreenOrientationChangeEvent
       );
       window.removeEventListener(
-        this.orientationChangeEventName,
+        scope.orientationChangeEventName,
         onDeviceOrientationChangeEvent
       );
 
@@ -133,23 +131,54 @@ class DeviceOrientationControls extends EventDispatcher {
       const device = scope.deviceOrientation;
 
       if (device) {
-        const alpha = device.alpha
+        let alpha = device.alpha
           ? MathUtils.degToRad(device.alpha) + scope.alphaOffset
           : 0; // Z
 
-        const beta = device.beta ? MathUtils.degToRad(device.beta) : 0; // X'
+        let beta = device.beta ? MathUtils.degToRad(device.beta) : 0; // X'
 
-        const gamma = device.gamma ? MathUtils.degToRad(device.gamma) : 0; // Y''
+        let gamma = device.gamma ? MathUtils.degToRad(device.gamma) : 0; // Y''
 
         const orient = scope.screenOrientation
           ? MathUtils.degToRad(scope.screenOrientation)
           : 0; // O
 
+        if (this.smoothingFactor < 1) {
+          if (this.lastOrientation) {
+            const k = this.smoothingFactor;
+            alpha = this._getSmoothedAngle(
+              alpha,
+              this.lastOrientation.alpha,
+              k
+            );
+            beta = this._getSmoothedAngle(
+              beta + Math.PI,
+              this.lastOrientation.beta,
+              k
+            );
+            gamma = this._getSmoothedAngle(
+              gamma + this.HALF_PI,
+              this.lastOrientation.gamma,
+              k,
+              Math.PI
+            );
+          } else {
+            beta += Math.PI;
+            gamma += this.HALF_PI;
+          }
+
+          this.lastOrientation = {
+            alpha: alpha,
+            beta: beta,
+            gamma: gamma,
+          };
+        }
+
         setObjectQuaternion(
           scope.object.quaternion,
           alpha,
-          beta,
-          gamma,
+          this.smoothingFactor < 1 ? beta - Math.PI : beta,
+          this.smoothingFactor < 1 ? gamma - this.HALF_PI : gamma,
           orient
         );
 
@@ -158,6 +187,35 @@ class DeviceOrientationControls extends EventDispatcher {
           scope.dispatchEvent(_changeEvent);
         }
       }
+    };
+
+    // NW Added
+    this._orderAngle = function (a, b, range = this.TWO_PI) {
+      if (
+        (b > a && Math.abs(b - a) < range / 2) ||
+        (a > b && Math.abs(b - a) > range / 2)
+      ) {
+        return { left: a, right: b };
+      } else {
+        return { left: b, right: a };
+      }
+    };
+
+    // NW Added
+    this._getSmoothedAngle = function (a, b, k, range = this.TWO_PI) {
+      const angles = this._orderAngle(a, b, range);
+      const angleshift = angles.left;
+      const origAnglesRight = angles.right;
+      angles.left = 0;
+      angles.right -= angleshift;
+      if (angles.right < 0) angles.right += range;
+      let newangle =
+        origAnglesRight == b
+          ? (1 - k) * angles.right + k * angles.left
+          : k * angles.right + (1 - k) * angles.left;
+      newangle += angleshift;
+      if (newangle >= range) newangle -= range;
+      return newangle;
     };
 
     this.dispose = function () {
